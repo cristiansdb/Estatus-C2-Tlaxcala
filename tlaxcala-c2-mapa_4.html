@@ -1,0 +1,907 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<title>Tlaxcala C2 — Cobertura por Etapas</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Cinzel:wght@400;600;700&family=Lato:wght@300;400;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"/>
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<style>
+/* ══ TOKENS ══════════════════════════════════════════════════════ */
+:root{
+  --bg:#0f0e17; --surface:#15122a; --panel:rgba(15,14,23,0.97);
+  --border:rgba(255,255,255,0.1); --text:#e8e6f0; --muted:#7a7890;
+  --e1:#3B82F6; --e2:#A855F7; --e3:#22C55E;
+  --e4v:#F59E0B; --e4p:#EF4444; --none:#374151;
+  --accent:#A855F7;
+  --header-h:52px;
+  --progress-h:72px;
+  --bottom-peek:72px;   /* altura visible del bottom sheet cerrado */
+  --bottom-full:88vh;   /* altura máxima del bottom sheet abierto */
+  --panel-w:290px;
+}
+
+/* ══ RESET ═══════════════════════════════════════════════════════ */
+*{margin:0;padding:0;box-sizing:border-box;-webkit-tap-highlight-color:transparent;}
+html,body{height:100%;overflow:hidden;font-family:'Lato',sans-serif;background:var(--bg);color:var(--text);}
+
+/* ══ APP SHELL ═══════════════════════════════════════════════════ */
+.app{display:flex;flex-direction:column;height:100%;}
+
+/* ══ HEADER ══════════════════════════════════════════════════════ */
+header{
+  height:var(--header-h);flex-shrink:0;
+  background:linear-gradient(135deg,#0a0914,#15122a,#0a0914);
+  border-bottom:1px solid rgba(168,85,247,0.4);
+  display:flex;align-items:center;padding:0 14px;gap:10px;
+  position:relative;z-index:1100;
+}
+.logo{
+  width:34px;height:34px;flex-shrink:0;
+  background:linear-gradient(135deg,#A855F7,#3B82F6);
+  border-radius:8px;display:flex;align-items:center;justify-content:center;
+  font-size:16px;box-shadow:0 0 14px rgba(168,85,247,0.35);
+}
+.header-title{flex:1;min-width:0;}
+.header-title h1{font-family:'Cinzel',serif;font-size:15px;font-weight:700;color:#fff;letter-spacing:1.5px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+.header-title p{font-size:9px;letter-spacing:3px;color:var(--muted);margin-top:1px;}
+
+/* hamburger — solo mobile */
+.btn-menu{
+  display:none;flex-shrink:0;
+  width:36px;height:36px;border:1px solid rgba(168,85,247,0.35);
+  border-radius:8px;background:rgba(168,85,247,0.1);
+  cursor:pointer;align-items:center;justify-content:center;
+  color:var(--accent);font-size:18px;
+}
+
+/* pills — desktop */
+.legend-pills{display:flex;gap:5px;flex-shrink:0;align-items:center;flex-wrap:nowrap;}
+.pill{
+  display:flex;align-items:center;gap:4px;padding:3px 9px;
+  border-radius:20px;font-size:10px;font-weight:700;letter-spacing:0.4px;
+  border:1.5px solid;cursor:pointer;transition:opacity 0.2s;user-select:none;white-space:nowrap;
+}
+.pill.faded{opacity:0.25;}
+.pill-dot{width:7px;height:7px;border-radius:50%;flex-shrink:0;}
+.pill-e1 {color:var(--e1); border-color:var(--e1); background:rgba(59,130,246,0.15);}
+.pill-e2 {color:var(--e2); border-color:var(--e2); background:rgba(168,85,247,0.15);}
+.pill-e3 {color:var(--e3); border-color:var(--e3); background:rgba(34,197,94,0.15);}
+.pill-e4v{color:var(--e4v);border-color:var(--e4v);background:rgba(245,158,11,0.15);}
+.pill-e4p{color:var(--e4p);border-color:var(--e4p);background:rgba(239,68,68,0.15);}
+.pill-n  {color:#9ca3af;  border-color:#4B5563;     background:rgba(75,85,99,0.15);}
+
+/* ══ PROGRESS BAR ════════════════════════════════════════════════ */
+.progress-wrap{
+  flex-shrink:0;height:var(--progress-h);
+  background:linear-gradient(135deg,#0a0914,#111029,#0a0914);
+  border-bottom:1px solid rgba(168,85,247,0.2);
+  display:flex;align-items:center;gap:16px;padding:0 16px;
+  overflow:hidden;
+}
+.prog-stats{display:flex;gap:12px;flex-shrink:0;}
+.prog-stat{text-align:center;}
+.prog-num{font-family:'Cinzel',serif;font-size:18px;font-weight:700;line-height:1;}
+.prog-num.green{color:var(--e3);} .prog-num.amber{color:var(--e4v);} .prog-num.red{color:var(--e4p);}
+.prog-label{font-size:8px;letter-spacing:1.5px;color:var(--muted);margin-top:2px;text-transform:uppercase;}
+.prog-vline{width:1px;height:32px;background:var(--border);flex-shrink:0;}
+
+.prog-track-wrap{flex:1;min-width:0;display:flex;flex-direction:column;gap:4px;}
+.prog-header{display:flex;justify-content:space-between;align-items:center;}
+.prog-title-text{font-size:9px;letter-spacing:1.5px;color:var(--muted);text-transform:uppercase;}
+.prog-pct{font-family:'Cinzel',serif;font-size:13px;color:var(--e3);font-weight:700;}
+.prog-track{height:12px;background:rgba(255,255,255,0.06);border-radius:6px;overflow:hidden;display:flex;}
+.prog-seg{height:100%;transition:width 0.9s cubic-bezier(.4,0,.2,1);}
+.seg-e1 {background:var(--e1);}
+.seg-e2 {background:var(--e2);}
+.seg-e3 {background:var(--e3);}
+.seg-e4v{background:repeating-linear-gradient(45deg,#F59E0B,#F59E0B 4px,#D97706 4px,#D97706 8px);}
+.seg-e4p{background:repeating-linear-gradient(45deg,#EF4444,#EF4444 4px,#B91C1C 4px,#B91C1C 8px);}
+.seg-non{background:rgba(75,85,99,0.45);}
+.prog-legend{display:flex;gap:8px;flex-wrap:wrap;}
+.pleg{display:flex;align-items:center;gap:3px;font-size:9px;color:var(--muted);}
+.pleg-dot{width:7px;height:7px;border-radius:2px;flex-shrink:0;}
+
+/* ══ MAP AREA ════════════════════════════════════════════════════ */
+.map-area{flex:1;display:flex;overflow:hidden;position:relative;}
+#map{flex:1;position:relative;}
+
+/* ══ DESKTOP SIDE PANEL ══════════════════════════════════════════ */
+.side-panel{
+  width:var(--panel-w);flex-shrink:0;
+  background:var(--panel);border-left:1px solid var(--border);
+  display:flex;flex-direction:column;overflow:hidden;
+}
+.panel-tabs{display:flex;border-bottom:1px solid var(--border);}
+.tab{
+  flex:1;padding:9px 4px;text-align:center;
+  font-size:10px;font-weight:700;letter-spacing:1px;text-transform:uppercase;
+  cursor:pointer;color:var(--muted);border-bottom:2px solid transparent;transition:all 0.2s;
+}
+.tab.active{color:var(--accent);border-bottom-color:var(--accent);}
+.tab-content{display:none;flex-direction:column;flex:1;overflow:hidden;}
+.tab-content.active{display:flex;}
+
+.search-wrap{padding:9px 12px;border-bottom:1px solid var(--border);}
+.search-wrap input{
+  width:100%;background:rgba(255,255,255,0.05);
+  border:1px solid var(--border);border-radius:6px;
+  padding:7px 12px;color:var(--text);font-size:12px;
+  outline:none;transition:border-color 0.2s;font-family:'Lato',sans-serif;
+}
+.search-wrap input:focus{border-color:var(--accent);}
+.search-wrap input::placeholder{color:var(--muted);}
+
+.muni-list{flex:1;overflow-y:auto;padding:4px 0;}
+.muni-list::-webkit-scrollbar{width:3px;}
+.muni-list::-webkit-scrollbar-thumb{background:rgba(168,85,247,0.4);border-radius:2px;}
+.muni-item{padding:7px 12px;cursor:pointer;border-left:3px solid transparent;transition:all 0.15s;display:flex;align-items:center;gap:8px;}
+.muni-item:hover{background:rgba(255,255,255,0.04);}
+.muni-item.active{background:rgba(168,85,247,0.1);}
+.muni-badge{font-size:9px;font-weight:700;padding:2px 6px;border-radius:10px;letter-spacing:0.5px;flex-shrink:0;}
+.muni-name{font-size:12px;flex:1;line-height:1.3;}
+.muni-note-icon{font-size:11px;opacity:0.7;flex-shrink:0;}
+
+.stats-bar{padding:7px 12px;border-top:1px solid var(--border);background:rgba(0,0,0,0.3);font-size:10px;color:var(--muted);display:flex;gap:8px;flex-wrap:wrap;flex-shrink:0;}
+.stat-chip{display:flex;align-items:center;gap:4px;}
+.stat-dot{width:6px;height:6px;border-radius:50%;}
+
+/* info panel */
+.info-section{padding:13px;border-bottom:1px solid var(--border);flex-shrink:0;}
+.info-section h3{font-family:'Cinzel',serif;font-size:13px;margin-bottom:7px;line-height:1.4;}
+.info-tag{display:inline-flex;align-items:center;gap:5px;padding:3px 9px;border-radius:20px;font-size:11px;font-weight:700;margin-bottom:7px;border:1.5px solid;}
+.info-rows{font-size:12px;color:var(--muted);line-height:1.9;}
+.info-rows strong{color:var(--text);}
+.notes-section{padding:13px;flex:1;display:flex;flex-direction:column;gap:7px;overflow:hidden;}
+.notes-label{font-size:9px;font-weight:700;letter-spacing:2px;text-transform:uppercase;color:var(--muted);}
+.notes-textarea{flex:1;min-height:60px;background:rgba(255,255,255,0.04);border:1px solid var(--border);border-radius:6px;padding:9px;color:var(--text);font-family:'Lato',sans-serif;font-size:12px;line-height:1.6;resize:none;outline:none;transition:border-color 0.2s;}
+.notes-textarea:focus{border-color:var(--accent);}
+.notes-textarea::placeholder{color:var(--muted);font-style:italic;}
+.save-btn{padding:8px;background:linear-gradient(135deg,#7c3aed,#3b82f6);border:none;border-radius:6px;color:#fff;font-family:'Lato',sans-serif;font-size:12px;font-weight:700;letter-spacing:1px;cursor:pointer;transition:all 0.2s;flex-shrink:0;}
+.save-btn:hover{opacity:0.85;}
+.save-btn.saved{background:linear-gradient(135deg,#16a34a,#22c55e);}
+.no-selection{flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;color:var(--muted);font-size:12px;text-align:center;padding:20px;gap:8px;}
+.no-selection .big{font-size:28px;}
+
+/* ══ MOBILE BOTTOM SHEET ═════════════════════════════════════════ */
+.bottom-sheet{
+  display:none;
+  position:absolute;left:0;right:0;bottom:0;z-index:1050;
+  background:var(--surface);
+  border-top:1px solid rgba(168,85,247,0.4);
+  border-radius:16px 16px 0 0;
+  height:var(--bottom-full);
+  transform:translateY(calc(100% - var(--bottom-peek)));
+  transition:transform 0.35s cubic-bezier(.4,0,.2,1);
+  will-change:transform;
+  flex-direction:column;
+  overflow:hidden;
+  touch-action:none;
+}
+.bottom-sheet.open{transform:translateY(0);}
+
+.sheet-handle-area{
+  flex-shrink:0;padding:10px 16px 4px;
+  cursor:grab;display:flex;flex-direction:column;align-items:center;gap:6px;
+}
+.sheet-handle{width:36px;height:4px;background:rgba(255,255,255,0.2);border-radius:2px;}
+.sheet-peek{width:100%;display:flex;align-items:center;justify-content:space-between;}
+.sheet-peek-title{font-family:'Cinzel',serif;font-size:12px;color:var(--accent);letter-spacing:1px;}
+.sheet-peek-count{font-size:11px;color:var(--muted);}
+
+.sheet-body{flex:1;display:flex;flex-direction:column;overflow:hidden;}
+
+/* FAB lista */
+.fab-list{
+  display:none;position:absolute;bottom:calc(var(--bottom-peek) + 12px);right:14px;
+  z-index:1060;width:46px;height:46px;border-radius:50%;
+  background:linear-gradient(135deg,#7c3aed,#3b82f6);
+  border:none;cursor:pointer;
+  box-shadow:0 4px 20px rgba(124,58,237,0.5);
+  font-size:20px;color:#fff;
+  align-items:center;justify-content:center;
+  transition:transform 0.2s;
+}
+.fab-list:active{transform:scale(0.92);}
+
+/* overlay dimmer */
+.overlay{display:none;position:absolute;inset:0;background:rgba(0,0,0,0.45);z-index:1040;backdrop-filter:blur(2px);}
+
+/* ══ LOADING ══════════════════════════════════════════════════════ */
+#loading{position:absolute;inset:0;background:rgba(10,9,20,0.96);display:flex;flex-direction:column;align-items:center;justify-content:center;z-index:3000;}
+.loader-ring{width:46px;height:46px;border:3px solid rgba(168,85,247,0.2);border-top-color:var(--accent);border-radius:50%;animation:spin 0.9s linear infinite;margin-bottom:14px;}
+@keyframes spin{to{transform:rotate(360deg);}}
+.loader-text{font-family:'Cinzel',serif;font-size:11px;letter-spacing:3px;color:var(--accent);}
+.loader-sub{font-size:10px;color:var(--muted);margin-top:8px;}
+
+/* ══ LEAFLET ══════════════════════════════════════════════════════ */
+.leaflet-container{background:#080710;}
+.leaflet-popup-content-wrapper{background:#15122a;border:1px solid rgba(168,85,247,0.5);border-radius:8px;color:var(--text);box-shadow:0 8px 32px rgba(0,0,0,0.8);}
+.leaflet-popup-tip{background:rgba(168,85,247,0.5);}
+.leaflet-popup-content{margin:12px 16px;font-family:'Lato',sans-serif;}
+.leaflet-tooltip{background:#15122a;border:1px solid rgba(168,85,247,0.5);color:var(--text);font-family:'Lato',sans-serif;font-size:12px;font-weight:700;padding:5px 10px;border-radius:4px;box-shadow:0 4px 16px rgba(0,0,0,0.6);white-space:nowrap;}
+.leaflet-control-zoom a{background:#15122a !important;color:var(--accent) !important;border-color:rgba(168,85,247,0.3) !important;}
+.leaflet-control-zoom a:hover{background:rgba(168,85,247,0.15) !important;}
+
+.hidden{display:none !important;}
+
+/* ══ RESPONSIVE ══════════════════════════════════════════════════ */
+
+/* — tablet (≤900px): ocultar pills del header, mantener panel — */
+@media(max-width:900px){
+  .legend-pills{display:none;}
+}
+
+/* — mobile (≤640px): colapsar a bottom-sheet — */
+@media(max-width:640px){
+  :root{--progress-h:58px; --bottom-peek:68px;}
+
+  .btn-menu{display:flex;}
+  .side-panel{display:none;}
+  .bottom-sheet{display:flex;}
+  .fab-list{display:flex;}
+  .overlay{display:block;pointer-events:none;}
+  .overlay.active{pointer-events:auto;}
+
+  /* progress más compacta */
+  .prog-stats{gap:8px;}
+  .prog-num{font-size:15px;}
+  .prog-label{font-size:7px;}
+  .prog-legend{display:none;}
+  .prog-pct{font-size:11px;}
+}
+
+/* — muy pequeño (≤380px) — */
+@media(max-width:380px){
+  :root{--progress-h:52px;}
+  .prog-vline{display:none;}
+  .prog-stats{gap:6px;}
+  .progress-wrap{gap:10px;padding:0 10px;}
+  header{padding:0 10px;}
+  .header-title h1{font-size:13px;}
+}
+</style>
+</head>
+<body>
+<div class="app">
+
+  <!-- ══ HEADER ══════════════════════════════════════════════════ -->
+  <header>
+    <div class="logo">📡</div>
+    <div class="header-title">
+      <h1>TLAXCALA C2</h1>
+      <p>COBERTURA POR ETAPAS · 2023–2026</p>
+    </div>
+
+    <!-- Pills (desktop/tablet) -->
+    <div class="legend-pills">
+      <div class="pill pill-e1"  onclick="toggleFilter('e1')"> <div class="pill-dot" style="background:var(--e1)"></div>1ª 2023</div>
+      <div class="pill pill-e2"  onclick="toggleFilter('e2')"> <div class="pill-dot" style="background:var(--e2)"></div>2ª 2024</div>
+      <div class="pill pill-e3"  onclick="toggleFilter('e3')"> <div class="pill-dot" style="background:var(--e3)"></div>3ª 2025</div>
+      <div class="pill pill-e4v" onclick="toggleFilter('e4v')"><div class="pill-dot" style="background:var(--e4v)"></div>4ª ✓</div>
+      <div class="pill pill-e4p" onclick="toggleFilter('e4p')"><div class="pill-dot" style="background:var(--e4p)"></div>4ª ⏳</div>
+      <div class="pill pill-n"   onclick="toggleFilter('none')"><div class="pill-dot" style="background:#6B7280"></div>N/A</div>
+    </div>
+
+    <!-- Hamburger (mobile) -->
+    <button class="btn-menu" onclick="openSheet('list')" title="Ver lista">☰</button>
+  </header>
+
+  <!-- ══ PROGRESS BAR ══════════════════════════════════════════════ -->
+  <div class="progress-wrap">
+    <div class="prog-stats">
+      <div class="prog-stat">
+        <div class="prog-num green" id="pctConcluido">—</div>
+        <div class="prog-label">Concluidos</div>
+      </div>
+      <div class="prog-vline"></div>
+      <div class="prog-stat">
+        <div class="prog-num amber" id="pctLev">—</div>
+        <div class="prog-label">Lev. Técnico</div>
+      </div>
+      <div class="prog-vline"></div>
+      <div class="prog-stat">
+        <div class="prog-num red" id="pctPend">—</div>
+        <div class="prog-label">Pendientes</div>
+      </div>
+    </div>
+    <div class="prog-vline" style="height:44px"></div>
+    <div class="prog-track-wrap">
+      <div class="prog-header">
+        <span class="prog-title-text">Avance C2 — 60 Municipios</span>
+        <span class="prog-pct" id="pctTotal">0%</span>
+      </div>
+      <div class="prog-track" id="progTrack">
+        <div class="prog-seg seg-e1"  id="seg-e1"  style="width:0"></div>
+        <div class="prog-seg seg-e2"  id="seg-e2"  style="width:0"></div>
+        <div class="prog-seg seg-e3"  id="seg-e3"  style="width:0"></div>
+        <div class="prog-seg seg-e4v" id="seg-e4v" style="width:0"></div>
+        <div class="prog-seg seg-e4p" id="seg-e4p" style="width:0"></div>
+        <div class="prog-seg seg-non" id="seg-non" style="width:0"></div>
+      </div>
+      <div class="prog-legend">
+        <div class="pleg"><div class="pleg-dot" style="background:var(--e1)"></div>E1 Concluido</div>
+        <div class="pleg"><div class="pleg-dot" style="background:var(--e2)"></div>E2 Concluido</div>
+        <div class="pleg"><div class="pleg-dot" style="background:var(--e3)"></div>E3 Concluido</div>
+        <div class="pleg"><div class="pleg-dot" style="background:var(--e4v)"></div>E4 Lev. Técnico</div>
+        <div class="pleg"><div class="pleg-dot" style="background:var(--e4p)"></div>E4 Pendiente</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ══ MAP + PANEL ════════════════════════════════════════════════ -->
+  <div class="map-area">
+
+    <!-- mapa -->
+    <div id="map">
+      <div id="loading">
+        <div class="loader-ring"></div>
+        <div class="loader-text">CARGANDO MUNICIPIOS…</div>
+        <div class="loader-sub" id="loadSub">Conectando a OpenStreetMap…</div>
+      </div>
+    </div>
+
+    <!-- Panel lateral (desktop) -->
+    <div class="side-panel">
+      <div class="panel-tabs">
+        <div class="tab active" onclick="showTab('list')">📋 Lista</div>
+        <div class="tab" onclick="showTab('info')">📍 Detalle</div>
+      </div>
+      <div class="tab-content active" id="tab-list">
+        <div class="search-wrap">
+          <input type="text" id="searchInput" placeholder="🔍  Buscar municipio...">
+        </div>
+        <div class="muni-list" id="muniList"></div>
+        <div class="stats-bar" id="statsBar"></div>
+      </div>
+      <div class="tab-content" id="tab-info">
+        <div id="infoContent">
+          <div class="no-selection">
+            <div class="big">🗺️</div>
+            <div>Selecciona un municipio<br>en el mapa o la lista</div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Overlay mobile -->
+    <div class="overlay" id="overlay" onclick="closeSheet()"></div>
+
+    <!-- FAB lista (mobile) -->
+    <button class="fab-list" id="fabList" onclick="openSheet('list')" title="Lista de municipios">📋</button>
+
+    <!-- Bottom Sheet (mobile) -->
+    <div class="bottom-sheet" id="bottomSheet">
+      <div class="sheet-handle-area" id="sheetHandle">
+        <div class="sheet-handle"></div>
+        <div class="sheet-peek">
+          <span class="sheet-peek-title" id="sheetPeekTitle">MUNICIPIOS</span>
+          <span class="sheet-peek-count" id="sheetPeekCount">60 municipios</span>
+        </div>
+      </div>
+
+      <div class="sheet-body">
+        <!-- Tabs mobile -->
+        <div class="panel-tabs">
+          <div class="tab active" onclick="showMobileTab('list')">📋 Lista</div>
+          <div class="tab" onclick="showMobileTab('info')">📍 Detalle</div>
+          <div class="tab" onclick="showMobileTab('filter')">🔧 Filtros</div>
+        </div>
+
+        <!-- Lista mobile -->
+        <div class="tab-content active" id="mob-tab-list">
+          <div class="search-wrap">
+            <input type="text" id="searchInputMob" placeholder="🔍  Buscar municipio...">
+          </div>
+          <div class="muni-list" id="muniListMob"></div>
+          <div class="stats-bar" id="statsBarMob"></div>
+        </div>
+
+        <!-- Detalle mobile -->
+        <div class="tab-content" id="mob-tab-info">
+          <div id="infoContentMob">
+            <div class="no-selection">
+              <div class="big">🗺️</div>
+              <div>Toca un municipio<br>en el mapa</div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Filtros mobile -->
+        <div class="tab-content" id="mob-tab-filter">
+          <div style="padding:14px;display:flex;flex-direction:column;gap:10px;overflow-y:auto;">
+            <div style="font-size:10px;letter-spacing:2px;color:var(--muted);text-transform:uppercase;margin-bottom:4px">Filtrar por etapa</div>
+            <div id="mobilePills" style="display:flex;flex-direction:column;gap:8px;"></div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+  </div><!-- /.map-area -->
+</div><!-- /.app -->
+
+<script>
+// ════════════════════════════════════════════════════════════
+// DATOS
+// ════════════════════════════════════════════════════════════
+const ETAPAS = {
+  // 1ª Etapa 2023
+  'Apizaco':{etapa:1},'Calpulalpan':{etapa:1},'El Carmen Tequexquitla':{etapa:1},
+  'Huamantla':{etapa:1},'Ixtacuixtla de Mariano Matamoros':{etapa:1},
+  'Nanacamilpa de Mariano Arista':{etapa:1},'Natívitas':{etapa:1},
+  'Apetatitlán de Antonio Carvajal':{etapa:1},'San Pablo del Monte':{etapa:1},
+  'Papalotla de Xicohténcatl':{etapa:1},'Tenancingo':{etapa:1},
+  'Zacatelco':{etapa:1},'Tlaxco':{etapa:1},
+  // 2ª Etapa 2024
+  'Amaxac de Guerrero':{etapa:2},'Atlangatepec':{etapa:2},'Chiautempan':{etapa:2},
+  'Emiliano Zapata':{etapa:2},'Ixtenco':{etapa:2},'Muñoz de Domingo Arenas':{etapa:2},
+  'Panotla':{etapa:2},'San Jerónimo Zacualpan':{etapa:2},'San José Teacalco':{etapa:2},
+  'Sanctórum de Lázaro Cárdenas':{etapa:2},'Santa Apolonia Teacalco':{etapa:2},
+  'Santa Catarina Ayometla':{etapa:2},'Xaloztoc':{etapa:2},'Teolocholco':{etapa:2},
+  'Tepetitla de Lardizábal':{etapa:2},'Tetla de la Solidaridad':{etapa:2},
+  'Municipio de Tlaxcala':{etapa:2},'Tocatlán':{etapa:2},'Tzompantepec':{etapa:2},
+  'Yauhquemehcan':{etapa:2},'Ziltlaltépec de Trinidad Sánchez Santos':{etapa:2},
+  // 3ª Etapa 2025
+  'Cuapiaxtla':{etapa:3},'Españita':{etapa:3},'La Magdalena Tlaltelulco':{etapa:3},
+  'San Francisco Tetlanohcan':{etapa:3},'Santa Cruz Tlaxcala':{etapa:3},
+  'Santa Isabel Xiloxoxtla':{etapa:3},'Xicohtzinco':{etapa:3},'Tepeyanco':{etapa:3},
+  'Totolac':{etapa:3},'Terrenate':{etapa:3},'San Damián Texóloc':{etapa:3},
+  'San Juan Huactzinco':{etapa:3},'Tetlatlahuca':{etapa:3},
+  'San Lorenzo Axocomanitla':{etapa:3},
+  // 4ª Etapa 2026 — Visitados (levantamiento técnico)
+  'Acuamanala de Miguel Hidalgo':{etapa:4,visitado:true},
+  'Atltzayanca':{etapa:4,visitado:true},'Cuaxomulco':{etapa:4,visitado:true},
+  'Hueyotlipan':{etapa:4,visitado:true},
+  'Mazatecochco de José María Morelos':{etapa:4,visitado:true},
+  'Santa Cruz Quilehtla':{etapa:4,visitado:true},'San Lucas Tecopilco':{etapa:4,visitado:true},
+  'Santa Ana Nopalucan':{etapa:4,visitado:true},'Xaltocan':{etapa:4,visitado:true},
+  'Benito Juárez':{etapa:4,visitado:true},
+  // 4ª Etapa 2026 — Pendientes
+  'Contla de Juan Cuamatzi':{etapa:4,visitado:false},
+  'Lázaro Cárdenas':{etapa:4,visitado:false},
+};
+
+const STYLE_MAP = {
+  e1:  {fillColor:'#3B82F6', label:'1ª Etapa 2023',    badge:'E1'},
+  e2:  {fillColor:'#A855F7', label:'2ª Etapa 2024',    badge:'E2'},
+  e3:  {fillColor:'#22C55E', label:'3ª Etapa 2025',    badge:'E3'},
+  e4v: {fillColor:'#F59E0B', label:'4ª Etapa 2026 ✓',  badge:'E4✓'},
+  e4p: {fillColor:'#EF4444', label:'4ª Etapa 2026 ⏳', badge:'E4⏳'},
+  none:{fillColor:'#374151', label:'Sin asignar',      badge:'—'},
+};
+
+function getInfo(name){ return ETAPAS[name]||null; }
+function getKey(info){
+  if(!info) return 'none';
+  if(info.etapa===1) return 'e1';
+  if(info.etapa===2) return 'e2';
+  if(info.etapa===3) return 'e3';
+  if(info.etapa===4&&info.visitado===false) return 'e4p';
+  if(info.etapa===4) return 'e4v';
+  return 'none';
+}
+
+// ════════════════════════════════════════════════════════════
+// MAPA
+// ════════════════════════════════════════════════════════════
+const map = L.map('map',{center:[19.42,-98.18],zoom:10,zoomControl:true,attributionControl:false});
+L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png',{subdomains:'abcd',maxZoom:18}).addTo(map);
+L.control.attribution({prefix:'© OSM · CartoDB'}).addTo(map);
+
+let geojsonLayer=null,allFeatures=[],selectedLayer=null,selectedName=null;
+const activeFilters=new Set();
+let notes={};
+try{notes=JSON.parse(localStorage.getItem('tlaxcala_c2_notes')||'{}');}catch(e){}
+function saveNotes(){try{localStorage.setItem('tlaxcala_c2_notes',JSON.stringify(notes));}catch(e){}}
+
+// ════════════════════════════════════════════════════════════
+// FETCH
+// ════════════════════════════════════════════════════════════
+const ENDPOINTS=[
+  'https://overpass-api.de/api/interpreter',
+  'https://overpass.kumi.systems/api/interpreter',
+  'https://overpass.openstreetmap.ru/api/interpreter',
+];
+const QUERY=`[out:json][timeout:60];area[name="Tlaxcala"]["admin_level"="4"]->.s;(relation["admin_level"="6"]["boundary"="administrative"](area.s););out geom;`;
+
+async function fetchOverpass(url){
+  const r=await fetch(url,{method:'POST',body:'data='+encodeURIComponent(QUERY),headers:{'Content-Type':'application/x-www-form-urlencoded'}});
+  if(!r.ok) throw new Error(`HTTP ${r.status}`);
+  const t=await r.text();
+  if(t.trim()[0]==='<') throw new Error('Rate limit del servidor');
+  return JSON.parse(t);
+}
+async function fetchWithFallback(){
+  for(let i=0;i<ENDPOINTS.length;i++){
+    try{
+      document.getElementById('loadSub').textContent=`Servidor ${i+1}/${ENDPOINTS.length}…`;
+      return await fetchOverpass(ENDPOINTS[i]);
+    }catch(e){
+      if(i===ENDPOINTS.length-1) throw e;
+      await new Promise(r=>setTimeout(r,1800));
+    }
+  }
+}
+
+// ════════════════════════════════════════════════════════════
+// GEOJSON
+// ════════════════════════════════════════════════════════════
+function overpassToGeoJSON(data){
+  const features=[];
+  for(const el of data.elements){
+    if(el.type!=='relation') continue;
+    const name=el.tags?.name||'Sin nombre';
+    const oW=[],iW=[];
+    for(const m of el.members||[]){
+      if(m.type==='way'&&m.geometry){
+        const c=m.geometry.map(p=>[p.lon,p.lat]);
+        (m.role==='inner'?iW:oW).push(c);
+      }
+    }
+    if(!oW.length) continue;
+    const outer=mW(oW),inner=mW(iW);
+    const geo=outer.length===1?{type:'Polygon',coordinates:[outer[0],...inner]}:{type:'MultiPolygon',coordinates:outer.map(r=>[r])};
+    features.push({type:'Feature',properties:{name,...el.tags},geometry:geo});
+  }
+  return{type:'FeatureCollection',features};
+}
+const eq=(a,b)=>Math.abs(a[0]-b[0])<1e-5&&Math.abs(a[1]-b[1])<1e-5;
+function mW(ways){
+  if(!ways.length) return[];
+  if(ways.length===1) return[ways[0]];
+  const rings=[],rem=ways.map(w=>[...w]);
+  while(rem.length){
+    let ring=rem.shift(),ch=true;
+    while(ch){ch=false;for(let i=0;i<rem.length;i++){const w=rem[i],rE=ring[ring.length-1],rS=ring[0];if(eq(rE,w[0])){ring=[...ring,...w.slice(1)];}else if(eq(rE,w[w.length-1])){ring=[...ring,...w.slice(0,-1).reverse()];}else if(eq(rS,w[w.length-1])){ring=[...w,...ring.slice(1)];}else if(eq(rS,w[0])){ring=[...w.reverse(),...ring.slice(1)];}else continue;rem.splice(i,1);ch=true;break;}}
+    rings.push(ring);
+  }
+  return rings;
+}
+
+// ════════════════════════════════════════════════════════════
+// PROGRESS
+// ════════════════════════════════════════════════════════════
+function renderProgress(features){
+  const T=features.length||60;
+  const c={e1:0,e2:0,e3:0,e4v:0,e4p:0,none:0};
+  features.forEach(f=>c[getKey(getInfo(f.properties.name))]++);
+  const concluded=c.e1+c.e2+c.e3;
+  document.getElementById('pctConcluido').textContent=`${concluded}/${T}`;
+  document.getElementById('pctLev').textContent=`${c.e4v}`;
+  document.getElementById('pctPend').textContent=`${c.e4p+c.none}`;
+  document.getElementById('pctTotal').textContent=`${Math.round(concluded/T*100)}% concluido`;
+  setTimeout(()=>{
+    ['e1','e2','e3','e4v','e4p','non'].forEach(k=>{
+      const cnt=k==='non'?c.none:c[k];
+      document.getElementById('seg-'+k).style.width=`${cnt/T*100}%`;
+    });
+  },200);
+}
+
+// ════════════════════════════════════════════════════════════
+// TABS (desktop)
+// ════════════════════════════════════════════════════════════
+function showTab(id){
+  document.querySelectorAll('.side-panel .tab-content').forEach(t=>t.classList.remove('active'));
+  document.querySelectorAll('.side-panel .tab').forEach(t=>t.classList.remove('active'));
+  document.getElementById('tab-'+id).classList.add('active');
+  document.querySelectorAll('.side-panel .tab')[id==='list'?0:1].classList.add('active');
+}
+
+// ════════════════════════════════════════════════════════════
+// MOBILE BOTTOM SHEET
+// ════════════════════════════════════════════════════════════
+let sheetOpen=false;
+
+function openSheet(tabId='list'){
+  sheetOpen=true;
+  document.getElementById('bottomSheet').classList.add('open');
+  document.getElementById('overlay').classList.add('active');
+  document.getElementById('fabList').style.display='none';
+  if(tabId) showMobileTab(tabId);
+}
+
+function closeSheet(){
+  sheetOpen=false;
+  document.getElementById('bottomSheet').classList.remove('open');
+  document.getElementById('overlay').classList.remove('active');
+  document.getElementById('fabList').style.display='flex';
+}
+
+function showMobileTab(id){
+  document.querySelectorAll('#bottomSheet .tab-content').forEach(t=>t.classList.remove('active'));
+  document.querySelectorAll('#bottomSheet .tab').forEach(t=>t.classList.remove('active'));
+  document.getElementById('mob-tab-'+id).classList.add('active');
+  const idx={list:0,info:1,filter:2}[id]||0;
+  document.querySelectorAll('#bottomSheet .tab')[idx].classList.add('active');
+}
+
+// Swipe/drag to dismiss bottom sheet
+(()=>{
+  const sheet=document.getElementById('bottomSheet');
+  const handle=document.getElementById('sheetHandle');
+  let startY=0,startTransY=0,dragging=false;
+
+  function getTransY(){
+    const t=new DOMMatrix(getComputedStyle(sheet).transform);
+    return t.m42||0;
+  }
+
+  handle.addEventListener('touchstart',e=>{
+    dragging=true;
+    startY=e.touches[0].clientY;
+    startTransY=getTransY();
+    sheet.style.transition='none';
+  },{passive:true});
+
+  window.addEventListener('touchmove',e=>{
+    if(!dragging) return;
+    const dy=e.touches[0].clientY-startY;
+    const newY=Math.max(0,startTransY+dy);
+    sheet.style.transform=`translateY(${newY}px)`;
+  },{passive:true});
+
+  window.addEventListener('touchend',e=>{
+    if(!dragging) return;
+    dragging=false;
+    sheet.style.transition='';
+    const curY=getTransY();
+    const threshold=sheet.offsetHeight*0.35;
+    if(curY>threshold){ closeSheet(); sheet.style.transform=''; }
+    else { sheet.style.transform='translateY(0)'; sheetOpen=true; }
+  },{passive:true});
+})();
+
+// ════════════════════════════════════════════════════════════
+// LIST BUILDER
+// ════════════════════════════════════════════════════════════
+function nrm(s){return s.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g,'');}
+
+function buildListInto(containerId, statBarId){
+  const list=document.getElementById(containerId);
+  list.innerHTML='';
+  [...allFeatures].sort((a,b)=>a.properties.name.localeCompare(b.properties.name,'es')).forEach(f=>{
+    const name=f.properties.name,info=getInfo(name),key=getKey(info),style=STYLE_MAP[key];
+    const hasNote=notes[name]?.trim();
+    const item=document.createElement('div');
+    item.className='muni-item'; item.dataset.name=name; item.dataset.key=key;
+    item.style.borderLeftColor=key!=='none'?style.fillColor:'transparent';
+    item.innerHTML=`
+      <span class="muni-badge" style="background:${style.fillColor}22;color:${style.fillColor};border:1px solid ${style.fillColor}55">${style.badge}</span>
+      <span class="muni-name">${name}</span>
+      ${hasNote?'<span class="muni-note-icon">📝</span>':''}`;
+    item.addEventListener('click',()=>selectMunicipio(name));
+    list.appendChild(item);
+  });
+  updateStats(statBarId, containerId);
+}
+
+function buildMobilePills(){
+  const wrap=document.getElementById('mobilePills');
+  wrap.innerHTML='';
+  const keys=['e1','e2','e3','e4v','e4p','none'];
+  const labels={'e1':'1ª Etapa 2023','e2':'2ª Etapa 2024','e3':'3ª Etapa 2025','e4v':'4ª Etapa ✓ (Lev. Técnico)','e4p':'4ª Etapa ⏳ (Pendiente)','none':'Sin asignar'};
+  keys.forEach(k=>{
+    const btn=document.createElement('div');
+    btn.style.cssText=`display:flex;align-items:center;gap:10px;padding:10px 14px;border-radius:10px;border:1.5px solid ${STYLE_MAP[k].fillColor}55;background:${STYLE_MAP[k].fillColor}11;cursor:pointer;`;
+    btn.dataset.filterKey=k;
+    btn.innerHTML=`<div style="width:12px;height:12px;border-radius:50%;background:${STYLE_MAP[k].fillColor};flex-shrink:0"></div><span style="font-size:13px;color:var(--text);flex:1">${labels[k]}</span><span style="font-size:10px;color:var(--muted)" id="mob-count-${k}">—</span>`;
+    btn.addEventListener('click',()=>toggleFilter(k));
+    wrap.appendChild(btn);
+  });
+}
+
+function updateStats(barId, listId){
+  const c={e1:0,e2:0,e3:0,e4v:0,e4p:0,none:0};
+  document.querySelectorAll(`#${listId} .muni-item`).forEach(el=>{if(el.style.display!=='none') c[el.dataset.key]++;});
+  document.getElementById(barId).innerHTML=Object.entries(c).filter(([,v])=>v>0)
+    .map(([k,v])=>`<div class="stat-chip"><div class="stat-dot" style="background:${STYLE_MAP[k].fillColor}"></div><span>${v}</span></div>`).join('');
+  // update mobile pill counts
+  Object.entries(c).forEach(([k,v])=>{
+    const el=document.getElementById(`mob-count-${k}`);
+    if(el) el.textContent=v;
+  });
+}
+
+function buildList(){
+  buildListInto('muniList','statsBar');
+  buildListInto('muniListMob','statsBarMob');
+  buildMobilePills();
+}
+
+// ════════════════════════════════════════════════════════════
+// SEARCH (wired to both inputs)
+// ════════════════════════════════════════════════════════════
+function applySearch(q){
+  ['muniList','muniListMob'].forEach(listId=>{
+    const barId=listId==='muniList'?'statsBar':'statsBarMob';
+    document.querySelectorAll(`#${listId} .muni-item`).forEach(el=>{
+      const match=nrm(el.dataset.name).includes(q)&&(activeFilters.size===0||activeFilters.has(el.dataset.key));
+      el.style.display=match?'':'none';
+    });
+    updateStats(barId,listId);
+  });
+}
+
+document.getElementById('searchInput').addEventListener('input',function(){
+  document.getElementById('searchInputMob').value=this.value;
+  applySearch(nrm(this.value));
+});
+document.getElementById('searchInputMob').addEventListener('input',function(){
+  document.getElementById('searchInput').value=this.value;
+  applySearch(nrm(this.value));
+});
+
+// ════════════════════════════════════════════════════════════
+// FILTERS
+// ════════════════════════════════════════════════════════════
+function toggleFilter(key){
+  activeFilters.has(key)?activeFilters.delete(key):activeFilters.add(key);
+  // desktop pills
+  document.querySelectorAll('.pill').forEach(p=>{
+    const pk=[...p.classList].find(c=>c.startsWith('pill-')&&c!=='pill')?.replace('pill-','');
+    if(pk) p.classList.toggle('faded',activeFilters.size>0&&!activeFilters.has(pk));
+  });
+  // mobile filter buttons
+  document.querySelectorAll('#mobilePills [data-filter-key]').forEach(btn=>{
+    const k=btn.dataset.filterKey;
+    btn.style.opacity=activeFilters.size>0&&!activeFilters.has(k)?'0.3':'1';
+  });
+  applySearch(nrm(document.getElementById('searchInput').value));
+  // map
+  geojsonLayer?.eachLayer(layer=>{
+    const k=getKey(getInfo(layer.feature?.properties?.name));
+    const show=activeFilters.size===0||activeFilters.has(k);
+    layer.setStyle({fillOpacity:show?0.65:0.07,opacity:show?1:0.25});
+  });
+  if(selectedLayer) selectedLayer.setStyle({fillOpacity:0.85,weight:3,color:'#fff',opacity:1});
+}
+
+// ════════════════════════════════════════════════════════════
+// SELECT
+// ════════════════════════════════════════════════════════════
+function selectMunicipio(name){
+  selectedName=name;
+  ['muniList','muniListMob'].forEach(listId=>{
+    document.querySelectorAll(`#${listId} .muni-item`).forEach(el=>el.classList.toggle('active',el.dataset.name===name));
+    document.querySelector(`#${listId} .muni-item.active`)?.scrollIntoView({block:'nearest'});
+  });
+  geojsonLayer?.eachLayer(layer=>{
+    if(layer.feature?.properties?.name===name){
+      map.fitBounds(layer.getBounds(),{padding:[50,50],maxZoom:13});
+      highlightLayer(layer);
+    }
+  });
+  renderInfoPanel(name);
+  showTab('info');
+  showMobileTab('info');
+  // On mobile auto-open sheet to info
+  if(window.innerWidth<=640) openSheet('info');
+  // update sheet peek title
+  document.getElementById('sheetPeekTitle').textContent=name.length>22?name.substring(0,20)+'…':name;
+}
+
+function highlightLayer(layer){
+  if(selectedLayer&&selectedLayer!==layer){
+    const k=getKey(getInfo(selectedLayer.feature?.properties?.name));
+    const show=activeFilters.size===0||activeFilters.has(k);
+    selectedLayer.setStyle({fillOpacity:show?0.65:0.07,weight:1,color:'rgba(255,255,255,0.15)'});
+  }
+  selectedLayer=layer;
+  layer.setStyle({fillOpacity:0.85,weight:3,color:'#fff'});
+  layer.bringToFront();
+}
+
+function renderInfoPanel(name){
+  const info=getInfo(name),key=getKey(info),style=STYLE_MAP[key],note=notes[name]||'';
+  const yr={1:'2023',2:'2024',3:'2025',4:'2026'};
+  const etLbl=info?`${info.etapa}ª Etapa ${yr[info.etapa]}`:'—';
+  const statusHtml=key==='e4p'
+    ?`<div style="color:#EF4444;font-size:11px;margin-top:5px;font-weight:700">⏳ Pendiente de visitar</div>`
+    :key==='e4v'
+    ?`<div style="color:#F59E0B;font-size:11px;margin-top:5px;font-weight:700">✅ En levantamiento técnico</div>`
+    :'';
+  const html=`
+    <div class="info-section">
+      <h3>${name}</h3>
+      <div class="info-tag" style="color:${style.fillColor};border-color:${style.fillColor};background:${style.fillColor}18">
+        <span>●</span>${style.label}
+      </div>
+      ${statusHtml}
+      <div class="info-rows" style="margin-top:7px">
+        <strong>Etapa:</strong> ${etLbl}<br>
+        <strong>Estado:</strong> Tlaxcala, México
+      </div>
+    </div>
+    <div class="notes-section">
+      <div class="notes-label">📝 Notas</div>
+      <textarea class="notes-textarea" data-muni="${name}" placeholder="Observaciones, contactos, pendientes…">${note}</textarea>
+      <button class="save-btn" onclick="saveNote('${name.replace(/'/g,"\\'")}')">GUARDAR NOTA</button>
+    </div>`;
+  document.getElementById('infoContent').innerHTML=html;
+  document.getElementById('infoContentMob').innerHTML=html.replace('saveNote(','saveNote(');
+}
+
+function saveNote(name){
+  // grab from whichever textarea has content
+  let text='';
+  document.querySelectorAll(`.notes-textarea[data-muni="${name}"]`).forEach(ta=>{ if(ta.value!==undefined) text=ta.value; });
+  notes[name]=text; saveNotes();
+  document.querySelectorAll('.save-btn').forEach(btn=>{
+    btn.textContent='✓ GUARDADO'; btn.classList.add('saved');
+    setTimeout(()=>{btn.textContent='GUARDAR NOTA';btn.classList.remove('saved');},2000);
+  });
+  ['muniList','muniListMob'].forEach(lid=>{
+    const item=document.querySelector(`#${lid} .muni-item[data-name="${CSS.escape(name)}"]`);
+    if(!item) return;
+    const ex=item.querySelector('.muni-note-icon');
+    if(text.trim()&&!ex) item.insertAdjacentHTML('beforeend','<span class="muni-note-icon">📝</span>');
+    else if(!text.trim()&&ex) ex.remove();
+  });
+}
+
+// ════════════════════════════════════════════════════════════
+// MAIN
+// ════════════════════════════════════════════════════════════
+async function main(){
+  document.getElementById('loading').classList.remove('hidden');
+  try{
+    const data=await fetchWithFallback();
+    const geojson=overpassToGeoJSON(data);
+    allFeatures=geojson.features;
+    buildList();
+    renderProgress(allFeatures);
+    // initial mobile count
+    document.getElementById('sheetPeekCount').textContent=`${allFeatures.length} municipios`;
+
+    geojsonLayer=L.geoJSON(geojson,{
+      style:feature=>{
+        const k=getKey(getInfo(feature.properties.name));
+        return{fillColor:STYLE_MAP[k].fillColor,fillOpacity:0.65,color:'rgba(255,255,255,0.15)',weight:1};
+      },
+      onEachFeature:(feature,layer)=>{
+        const name=feature.properties.name,info=getInfo(name),key=getKey(info),style=STYLE_MAP[key];
+        // solo tooltip en desktop
+        if(window.innerWidth>640){
+          layer.bindTooltip(`<b>${name}</b><br><span style="color:${style.fillColor}">${style.label}</span>`,{permanent:false,direction:'center',opacity:0.97});
+        }
+        layer.on({
+          mouseover(){if(layer!==selectedLayer) layer.setStyle({fillOpacity:0.85,weight:2.5,color:'rgba(255,255,255,0.6)'}); },
+          mouseout(){if(layer!==selectedLayer){const show=activeFilters.size===0||activeFilters.has(key);layer.setStyle({fillOpacity:show?0.65:0.07,weight:1,color:'rgba(255,255,255,0.15)'});}},
+          click(){
+            highlightLayer(layer); selectedName=name;
+            ['muniList','muniListMob'].forEach(lid=>{
+              document.querySelectorAll(`#${lid} .muni-item`).forEach(el=>el.classList.toggle('active',el.dataset.name===name));
+              document.querySelector(`#${lid} .muni-item.active`)?.scrollIntoView({block:'nearest'});
+            });
+            renderInfoPanel(name); showTab('info'); showMobileTab('info');
+            if(window.innerWidth<=640) openSheet('info');
+            document.getElementById('sheetPeekTitle').textContent=name.length>22?name.substring(0,20)+'…':name;
+          }
+        });
+      }
+    }).addTo(map);
+
+    map.fitBounds(geojsonLayer.getBounds(),{padding:[16,16]});
+  }catch(err){
+    document.getElementById('loading').innerHTML=`
+      <div style="text-align:center;padding:24px;font-family:'Lato',sans-serif">
+        <div style="font-size:36px;margin-bottom:12px">⚠️</div>
+        <div style="font-family:'Cinzel',serif;color:#A855F7;letter-spacing:2px;margin-bottom:8px">ERROR AL CARGAR</div>
+        <div style="font-size:12px;color:#7a7890;margin-bottom:16px;max-width:280px">${err.message}</div>
+        <button onclick="main()" style="padding:10px 28px;background:linear-gradient(135deg,#7c3aed,#3b82f6);border:none;border-radius:8px;color:#fff;font-family:'Cinzel',serif;font-size:13px;letter-spacing:2px;cursor:pointer">REINTENTAR</button>
+      </div>`;
+    return;
+  }
+  document.getElementById('loading').classList.add('hidden');
+}
+
+// Ajustar tamaño del mapa cuando cambia orientación
+window.addEventListener('resize',()=>{ map.invalidateSize(); });
+
+main();
+</script>
+</body>
+</html>
